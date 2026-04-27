@@ -16,6 +16,10 @@ ITERATIONS = 480_000
 def derive_key(password: str, salt: Optional[bytes] = None) -> tuple[bytes, bytes]:
     """Derive a Fernet-compatible key from a password using PBKDF2.
 
+    Args:
+        password: The password to derive the key from.
+        salt: Optional salt bytes. If not provided, a random salt is generated.
+
     Returns:
         A tuple of (key, salt) where key is base64-encoded and ready for Fernet.
     """
@@ -35,6 +39,10 @@ def derive_key(password: str, salt: Optional[bytes] = None) -> tuple[bytes, byte
 def encrypt(plaintext: str, password: str) -> bytes:
     """Encrypt a plaintext string with a password.
 
+    Args:
+        plaintext: The string to encrypt.
+        password: The password used to derive the encryption key.
+
     Returns:
         Raw bytes containing the salt prepended to the Fernet token.
     """
@@ -47,9 +55,20 @@ def encrypt(plaintext: str, password: str) -> bytes:
 def decrypt(ciphertext: bytes, password: str) -> str:
     """Decrypt bytes produced by :func:`encrypt`.
 
+    Args:
+        ciphertext: The encrypted bytes, as returned by :func:`encrypt`.
+        password: The password used to derive the decryption key.
+
     Raises:
+        ValueError: If the ciphertext is too short to contain a valid salt.
         ValueError: If the password is incorrect or the data is corrupted.
     """
+    if len(ciphertext) <= SALT_SIZE:
+        raise ValueError(
+            f"Ciphertext is too short: expected more than {SALT_SIZE} bytes, "
+            f"got {len(ciphertext)}."
+        )
+
     salt = ciphertext[:SALT_SIZE]
     token = ciphertext[SALT_SIZE:]
 
