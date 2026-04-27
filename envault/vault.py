@@ -1,13 +1,12 @@
-"""Vault module for storing and retrieving encrypted environment variables."""
+"""Vault storage for encrypted environment variables."""
+
+from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from typing import Optional
+from typing import Dict
 
-from envault.crypto import derive_key, encrypt, decrypt
-
-DEFAULT_VAULT_FILE = ".envault"
+from envault.crypto import encrypt, decrypt, derive_key
 
 
 class VaultError(Exception):
@@ -15,65 +14,66 @@ class VaultError(Exception):
 
 
 class Vault:
-    """Manages encrypted environment variables stored in a JSON vault file."""
+    """Manages an encrypted key/value store persisted to disk."""
 
-    def __init__(self, path: str = DEFAULT_VAULT_FILE, target: str = "default"):
-        self.path = Path(path)
-        self.target = target
-        self._data: dict = {}
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._data: Dict[str, dict] = {}
+        self._load()
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     def _load(self) -> None:
-        """Load vault data from disk."""
-        if not self.path.exists():
-            self._data = {}
-            return
-        try:
-            with open(self.path, "r") as f:
-                self._data = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            raise VaultError(f"Failed to read vault file: {e}") from e
+        if self.path.exists():
+            try:
+                self._data = json.loads(self.path.read_text())
+            except (json.JSONDecodeError, OSError) as exc:
+                raise VaultError(f"Cannot read vault file: {exc}") from exc
 
     def _save(self) -> None:
-        """Persist vault data to disk."""
         try:
-            with open(self.path, "w") as f:
-                json.dump(self._data, f, indent=2)
-        except OSError as e:
-            raise VaultError(f"Failed to write vault file: {e}") from e
+            self.path.write_text(json.dumps(self._data, indent=2))
+        except OSError as exc:
+            raise VaultError(f"Cannot write vault file: {exc}") from exc
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def set(self, key: str, value: str, password: str) -> None:
-        """Encrypt and store an environment variable."""
-        self._load()
-        derived_key, salt = derive_key(password)
-        token = encrypt(derived_key, value)
-        self._data.setdefault(self.target, {})[key] = {
-            "salt": salt.hex(),
-            "token": token.hex(),
-        }
+        """Encrypt *value* and store it under *key*."""
+        key_bytes, salt = derive_key(password)
+        token = encrypt(value.encode(), key_bytes)
+        self._data[key] = {"token": token, "salt": salt}
         self._save()
 
     def get(self, key: str, password: str) -> str:
-        """Retrieve and decrypt an environment variable."""
-        self._load()
-        target_data = self._data.get(self.target, {})
-        entry = target_data.get(key)
-        if entry is None:
-            raise VaultError(f"Key '{key}' not found in target '{self.target}'")
-        salt = bytes.fromhex(entry["salt"])
-        token = bytes.fromhex(entry["token"])
-        derived_key, _ = derive_key(password, salt=salt)
-        return decrypt(derived_key, token)
+        """Retrieve and decrypt the value stored under *key*."""
+        if key not in self._data:
+            raise VaultError(f"Key '{key}' not found in vault.")
+        entry = self._data[key]
+        key_bytes, _ = derive_key(password, salt=entry["salt"])
+        try:
+            return decrypt(entry["token"], key_bytes).decode()
+        except Exception as exc:
+            raise VaultError(f"Decryption failed for '{key}': {exc}") from exc
 
     def delete(self, key: str) -> None:
-        """Remove an environment variable from the vault."""
-        self._load()
-        target_data = self._data.get(self.target, {})
-        if key not in target_data:
-            raise VaultError(f"Key '{key}' not found in target '{self.target}'")
-        del target_data[key]
+        """Remove *key* from the vault."""
+        if key not in self._data:
+            raise VaultError(f"Key '{key}' not found in vault.")
+        del self._data[key]
         self._save()
 
     def list_keys(self) -> list[str]:
-        """Return all stored keys for the current target."""
-        self._load()
-        return list(self._data.get(self.target, {}).keys())
+        """Return a sorted list of all stored keys."""
+        return sorted(self._data.keys())
+
+    def get_all(self, password: str) -> Dict[str, str]:
+        """Decrypt and return all key/value pairs."""
+        result: Dict[str, str] = {}
+        for key in self._data:
+            result[key] = self.get(key, password)
+        return result
