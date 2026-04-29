@@ -97,12 +97,19 @@ class TestImportSecrets:
         imported = import_secrets(vault_mock, src, "dotenv", overwrite=True)
         assert "FOO" in imported
 
-    def test_raises_when_file_missing(self, tmp_path, vault_mock):
+    def test_imports_json_file(self, tmp_path, vault_mock):
+        src = tmp_path / "secrets.json"
+        src.write_text(json.dumps({"API_KEY": "abc123", "DB_PASS": "secret"}))
+        imported = import_secrets(vault_mock, src, "json")
+        assert set(imported) == {"API_KEY", "DB_PASS"}
+
+    def test_raises_on_missing_file(self, tmp_path, vault_mock):
+        src = tmp_path / "nonexistent.env"
         with pytest.raises(EnvImportError, match="not found"):
-            import_secrets(vault_mock, tmp_path / "missing.env", "dotenv")
+            import_secrets(vault_mock, src, "dotenv")
 
     def test_raises_on_unsupported_format(self, tmp_path, vault_mock):
-        src = tmp_path / "data.txt"
-        src.write_text("KEY=val")
-        with pytest.raises(EnvImportError, match="Unsupported"):
+        src = tmp_path / "secrets.yaml"
+        src.write_text("FOO: bar")
+        with pytest.raises(EnvImportError, match="Unsupported format"):
             import_secrets(vault_mock, src, "yaml")
