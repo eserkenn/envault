@@ -48,6 +48,11 @@ class TestRecordEvent:
         with pytest.raises(AuditError):
             record_event("/nonexistent/deep/path/vault.enc", "set")
 
+    def test_vault_path_stored_in_entry(self, vault_path: str) -> None:
+        """Ensure the vault path is recorded in the audit entry for traceability."""
+        entry = record_event(vault_path, "set", keys=["SECRET"])
+        assert entry["vault"] == vault_path
+
 
 class TestReadLog:
     def test_returns_empty_list_when_no_log(self, vault_path: str) -> None:
@@ -66,3 +71,12 @@ class TestReadLog:
         (tmp_path / AUDIT_FILE).write_text("not valid json")
         with pytest.raises(AuditError):
             read_log(vault_path)
+
+    def test_entries_are_ordered_by_insertion(self, vault_path: str) -> None:
+        """Entries should be returned in the order they were recorded."""
+        actions = ["set", "export", "rotate", "import"]
+        for action in actions:
+            record_event(vault_path, action)
+
+        entries = read_log(vault_path)
+        assert [e["action"] for e in entries] == actions
