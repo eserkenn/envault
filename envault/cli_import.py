@@ -50,8 +50,12 @@ def run_import(source: Path, vault_file: Path, password: str, fmt: str, overwrit
     try:
         vault = Vault(vault_file, password)
         imported = import_secrets(vault, source, fmt, overwrite=overwrite)
-    except (EnvImportError, VaultError) as exc:
-        raise click.ClickException(str(exc)) from exc
+    except VaultError as exc:
+        raise click.ClickException(f"Vault error: {exc}") from exc
+    except EnvImportError as exc:
+        raise click.ClickException(f"Import error: {exc}") from exc
+    except OSError as exc:
+        raise click.ClickException(f"Could not read source file '{source}': {exc}") from exc
 
     if imported:
         click.echo(f"Imported {len(imported)} key(s): {', '.join(imported)}.")
