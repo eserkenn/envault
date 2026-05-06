@@ -45,6 +45,13 @@ class TestRender:
     def test_empty_secrets_dotenv(self):
         assert _render({}, "dotenv") == ""
 
+    def test_empty_secrets_json(self):
+        result = _render({}, "json")
+        assert json.loads(result) == {}
+
+    def test_empty_secrets_shell(self):
+        assert _render({}, "shell") == ""
+
     def test_unknown_format_raises(self):
         with pytest.raises(ExportError):
             _render({"K": "v"}, "xml")
@@ -80,3 +87,9 @@ class TestExportSecrets:
         result = export_secrets(vault_mock, "password", fmt="json")
         data = json.loads(result)
         assert "GLOBAL_KEY" in data
+
+    def test_filters_by_target_returns_all_keys_stripped(self, vault_mock):
+        """Keys returned for a target should have the 'target:' prefix removed."""
+        result = export_secrets(vault_mock, "password", target="staging", fmt="dotenv")
+        assert "DB_HOST=db.staging.example.com" in result
+        assert "staging:DB_HOST" not in result
