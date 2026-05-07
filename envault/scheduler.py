@@ -42,8 +42,16 @@ def load_schedule(vault_path: Path) -> List[ScheduleEntry]:
     path = _schedule_path(vault_path)
     if not path.exists():
         return []
-    data = json.loads(path.read_text())
-    return [ScheduleEntry(**e) for e in data]
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SchedulerError(f"Failed to parse schedule file '{path}': {exc}") from exc
+    if not isinstance(data, list):
+        raise SchedulerError(f"Schedule file '{path}' must contain a JSON array")
+    try:
+        return [ScheduleEntry(**e) for e in data]
+    except (TypeError, KeyError) as exc:
+        raise SchedulerError(f"Invalid schedule entry in '{path}': {exc}") from exc
 
 
 def save_schedule(vault_path: Path, entries: List[ScheduleEntry]) -> None:
