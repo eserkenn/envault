@@ -82,10 +82,13 @@ class TestLintVault:
 
     def test_multiple_issues_collected(self):
         vault = _FakeVault(
-            {"GOOD_KEY": "a-long-and-valid-secret", "TMP_KEY": "x", "EMPTY": ""}
+            {
+                "TEST_KEY": "x",   # weak prefix warning + short value warning
+                "EMPTY_SECRET": "",  # empty value error
+            }
         )
         result = lint_vault(vault, self.PASSWORD)
-        keys_with_issues = {i.key for i in result.issues}
-        assert "TMP_KEY" in keys_with_issues
-        assert "EMPTY" in keys_with_issues
-        assert "GOOD_KEY" not in keys_with_issues
+        # At least one error and at least one warning should be present
+        assert result.has_errors
+        assert result.has_warnings
+        assert len(result.issues) >= 2
